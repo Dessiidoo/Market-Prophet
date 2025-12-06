@@ -36,7 +36,7 @@ export default function DashboardPage() {
                 <Activity className="w-5 h-5 text-primary relative z-10" />
             </div>
             <h1 className="font-display font-bold text-xl tracking-wider">
-              OMNI<span className="text-primary">SCOUT</span>_AI
+              GOLD <span className="text-primary">DUST</span>
             </h1>
           </div>
           <div className="flex items-center gap-4">
@@ -162,6 +162,17 @@ export default function DashboardPage() {
         </div>
 
       </main>
+
+      <footer className="border-t border-white/10 bg-black/40 backdrop-blur-sm py-6 mt-auto">
+        <div className="container mx-auto px-4 text-center space-y-2">
+          <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest">
+            SYSTEM ARCHITECT: LORETTA CHAPMAN
+          </div>
+          <div className="text-[10px] font-mono text-primary/70">
+             BUILD_TIMESTAMP: {new Date().toLocaleString().toUpperCase()}
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

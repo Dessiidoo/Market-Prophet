@@ -65,7 +65,7 @@ export function AiTerminal({ active }: { active: boolean }) {
       <div className="flex items-center justify-between p-2 border-b border-border/50 bg-white/5">
         <div className="flex items-center gap-2 text-muted-foreground">
           <Terminal className="w-4 h-4" />
-          <span className="font-bold tracking-widest">OMNISCOUT_KERNEL_V4.2</span>
+          <span className="font-bold tracking-widest">GOLD_DUST_KERNEL_V4.2</span>
         </div>
         <div className="flex gap-2">
            <Wifi className={`w-3 h-3 ${active ? "text-primary animate-pulse" : "text-muted-foreground"}`} />
