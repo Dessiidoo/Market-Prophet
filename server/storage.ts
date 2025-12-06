@@ -1,38 +1,125 @@
-import { type User, type InsertUser } from "@shared/schema";
-import { randomUUID } from "crypto";
+import { 
+  type User, 
+  type InsertUser,
+  type Portfolio,
+  type InsertPortfolio,
+  type Trade,
+  type InsertTrade,
+  type MarketCache,
+  type InsertMarketCache,
+  users,
+  portfolios,
+  trades,
+  marketCache,
+} from "@shared/schema";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { eq, desc, and, lt, gt } from "drizzle-orm";
+import pg from "pg";
 
-// modify the interface with any CRUD methods
-// you might need
+const { Pool } = pg;
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  
+  createPortfolio(portfolio: InsertPortfolio): Promise<Portfolio>;
+  getPortfolio(id: string): Promise<Portfolio | undefined>;
+  updatePortfolioValue(id: string, currentValue: number): Promise<Portfolio | undefined>;
+  
+  createTrade(trade: InsertTrade): Promise<Trade>;
+  getTradesByPortfolio(portfolioId: string): Promise<Trade[]>;
+  getRecentTrades(limit: number): Promise<Trade[]>;
+  
+  getMarketCache(symbol: string): Promise<MarketCache | undefined>;
+  setMarketCache(cache: InsertMarketCache): Promise<MarketCache>;
+  cleanExpiredCache(): Promise<void>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
+export class DatabaseStorage implements IStorage {
+  private db;
 
   constructor() {
-    this.users = new Map();
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+    });
+    this.db = drizzle(pool);
   }
 
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+    const result = await this.db.select().from(users).where(eq(users.id, id)).limit(1);
+    return result[0];
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+    const result = await this.db.select().from(users).where(eq(users.username, username)).limit(1);
+    return result[0];
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+    const result = await this.db.insert(users).values(insertUser).returning();
+    return result[0];
+  }
+
+  async createPortfolio(portfolio: InsertPortfolio): Promise<Portfolio> {
+    const result = await this.db.insert(portfolios).values(portfolio).returning();
+    return result[0];
+  }
+
+  async getPortfolio(id: string): Promise<Portfolio | undefined> {
+    const result = await this.db.select().from(portfolios).where(eq(portfolios.id, id)).limit(1);
+    return result[0];
+  }
+
+  async updatePortfolioValue(id: string, currentValue: number): Promise<Portfolio | undefined> {
+    const result = await this.db
+      .update(portfolios)
+      .set({ currentValue, updatedAt: new Date() })
+      .where(eq(portfolios.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async createTrade(trade: InsertTrade): Promise<Trade> {
+    const result = await this.db.insert(trades).values(trade).returning();
+    return result[0];
+  }
+
+  async getTradesByPortfolio(portfolioId: string): Promise<Trade[]> {
+    return await this.db
+      .select()
+      .from(trades)
+      .where(eq(trades.portfolioId, portfolioId))
+      .orderBy(desc(trades.timestamp));
+  }
+
+  async getRecentTrades(limit: number): Promise<Trade[]> {
+    return await this.db
+      .select()
+      .from(trades)
+      .orderBy(desc(trades.timestamp))
+      .limit(limit);
+  }
+
+  async getMarketCache(symbol: string): Promise<MarketCache | undefined> {
+    const now = new Date();
+    const result = await this.db
+      .select()
+      .from(marketCache)
+      .where(and(eq(marketCache.symbol, symbol), gt(marketCache.expiresAt, now)))
+      .limit(1);
+    return result[0];
+  }
+
+  async setMarketCache(cache: InsertMarketCache): Promise<MarketCache> {
+    const result = await this.db.insert(marketCache).values(cache).returning();
+    return result[0];
+  }
+
+  async cleanExpiredCache(): Promise<void> {
+    const now = new Date();
+    await this.db.delete(marketCache).where(lt(marketCache.expiresAt, now));
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
