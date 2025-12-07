@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { marketService } from "./market-service";
+import { backtestService } from "./backtest-service";
 import { insertPortfolioSchema, insertTradeSchema, insertWithdrawalSchema } from "@shared/schema";
 import { stripeService } from "./stripeService";
 import { getStripePublishableKey } from "./stripeClient";
@@ -330,6 +331,35 @@ export async function registerRoutes(
       const withdrawals = await storage.getWithdrawalsByPortfolio(req.params.portfolioId);
       res.json(withdrawals);
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/backtest", async (req, res) => {
+    try {
+      const days = parseInt(req.query.days as string) || 14;
+      const symbolsParam = req.query.symbols as string;
+      const symbols = symbolsParam 
+        ? symbolsParam.split(",").map(s => s.trim().toUpperCase())
+        : ["AAPL", "MSFT", "GOOGL"];
+      
+      const result = await backtestService.runAggregateBacktest(symbols, days);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Backtest error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/backtest/:symbol", async (req, res) => {
+    try {
+      const days = parseInt(req.query.days as string) || 30;
+      const symbol = req.params.symbol.toUpperCase();
+      
+      const result = await backtestService.runBacktest(symbol, days);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Backtest error:", error);
       res.status(500).json({ error: error.message });
     }
   });
