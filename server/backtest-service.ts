@@ -53,9 +53,31 @@ export interface AggregateBacktestResult {
 class BacktestService {
   private apiKey: string;
   private baseUrl = "https://www.alphavantage.co/query";
+  private resultCache: Map<string, { data: AggregateBacktestResult; timestamp: number }> = new Map();
+  private cacheExpiry = 30 * 60 * 1000; // 30 minutes cache
 
   constructor() {
     this.apiKey = process.env.ALPHA_VANTAGE_API_KEY || "";
+  }
+
+  private getCacheKey(symbols: string[], days: number): string {
+    return `${symbols.sort().join(',')}_${days}`;
+  }
+
+  private getCachedResult(symbols: string[], days: number): AggregateBacktestResult | null {
+    const key = this.getCacheKey(symbols, days);
+    const cached = this.resultCache.get(key);
+    if (cached && Date.now() - cached.timestamp < this.cacheExpiry) {
+      console.log(`Returning cached backtest results for ${key}`);
+      return cached.data;
+    }
+    return null;
+  }
+
+  private setCachedResult(symbols: string[], days: number, data: AggregateBacktestResult): void {
+    const key = this.getCacheKey(symbols, days);
+    this.resultCache.set(key, { data, timestamp: Date.now() });
+    console.log(`Cached backtest results for ${key}`);
   }
 
   private async fetchHistoricalData(symbol: string): Promise<HistoricalData[]> {
@@ -263,6 +285,11 @@ class BacktestService {
   }
 
   async runAggregateBacktest(symbols: string[], days: number = 14): Promise<AggregateBacktestResult> {
+    const cached = this.getCachedResult(symbols, days);
+    if (cached) {
+      return cached;
+    }
+
     const results: BacktestResult[] = [];
 
     for (const symbol of symbols) {
@@ -298,7 +325,7 @@ class BacktestService {
     const outperformsSP500 = avgTotalReturn > sp500AvgReturn;
     const sp500Comparison = avgTotalReturn - sp500AvgReturn;
 
-    return {
+    const result: AggregateBacktestResult = {
       period: `${days} days`,
       symbols,
       totalTrades,
@@ -314,6 +341,12 @@ class BacktestService {
       sp500Comparison,
       results,
     };
+
+    if (results.length > 0) {
+      this.setCachedResult(symbols, days, result);
+    }
+
+    return result;
   }
 }
 
