@@ -17,12 +17,16 @@ export default function DashboardPage() {
     if (!amount) return;
     const val = parseFloat(amount);
     if (isNaN(val)) return;
+    // Clear localStorage to force creation of a new portfolio with the new amount
+    localStorage.removeItem('golddust_portfolio_id');
     setParsedAmount(val);
     setActive(true);
   };
 
   const handleReset = () => {
     setActive(false);
+    // Clear localStorage when resetting
+    localStorage.removeItem('golddust_portfolio_id');
   };
 
   return (
