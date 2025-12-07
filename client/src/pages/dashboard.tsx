@@ -70,10 +70,14 @@ export default function DashboardPage() {
       const response = await fetch(`/api/portfolio/${portfolioId}`);
       if (response.ok) {
         const portfolio = await response.json();
-        setParsedAmount(portfolio.initialInvestment);
-        setCurrentBalance(portfolio.currentValue);
-        setActive(true);
-        checkConnectStatus(portfolioId);
+        if (portfolio.paymentCompleted === "true") {
+          setParsedAmount(portfolio.initialInvestment);
+          setCurrentBalance(portfolio.currentValue);
+          setActive(true);
+          checkConnectStatus(portfolioId);
+        } else {
+          localStorage.removeItem('golddust_portfolio_id');
+        }
       }
     } catch (error) {
       console.error('Failed to load portfolio:', error);

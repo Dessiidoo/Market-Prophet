@@ -24,6 +24,7 @@ export const portfolios = pgTable("portfolios", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   stripeConnectAccountId: text("stripe_connect_account_id"),
   connectOnboardingComplete: text("connect_onboarding_complete").default("false"),
+  paymentCompleted: text("payment_completed").default("false"),
 });
 
 export const insertPortfolioSchema = createInsertSchema(portfolios).omit({

@@ -167,9 +167,15 @@ export async function registerRoutes(
   app.get("/api/checkout/session/:sessionId", async (req, res) => {
     try {
       const session = await stripeService.getSession(req.params.sessionId);
+      const portfolioId = session.metadata?.portfolioId;
+      
+      if (session.payment_status === 'paid' && portfolioId) {
+        await storage.markPaymentCompleted(portfolioId);
+      }
+      
       res.json({ 
         status: session.payment_status,
-        portfolioId: session.metadata?.portfolioId,
+        portfolioId: portfolioId,
         amount: session.metadata?.investmentAmount
       });
     } catch (error: any) {

@@ -30,6 +30,7 @@ export interface IStorage {
   getPortfolio(id: string): Promise<Portfolio | undefined>;
   updatePortfolioValue(id: string, currentValue: number): Promise<Portfolio | undefined>;
   updatePortfolioConnectAccount(id: string, connectAccountId: string, onboardingComplete: boolean): Promise<Portfolio | undefined>;
+  markPaymentCompleted(id: string): Promise<Portfolio | undefined>;
   
   createTrade(trade: InsertTrade): Promise<Trade>;
   getTradesByPortfolio(portfolioId: string): Promise<Trade[]>;
@@ -135,6 +136,18 @@ export class DatabaseStorage implements IStorage {
       .set({ 
         stripeConnectAccountId: connectAccountId, 
         connectOnboardingComplete: onboardingComplete ? "true" : "false",
+        updatedAt: new Date() 
+      })
+      .where(eq(portfolios.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async markPaymentCompleted(id: string): Promise<Portfolio | undefined> {
+    const result = await this.db
+      .update(portfolios)
+      .set({ 
+        paymentCompleted: "true",
         updatedAt: new Date() 
       })
       .where(eq(portfolios.id, id))
