@@ -6,22 +6,39 @@ import { TradeCard } from "@/components/ui/trade-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { Activity, Play, Power, RotateCcw, Lock, CreditCard, Loader2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Activity, Play, Power, RotateCcw, Lock, CreditCard, Loader2, Wallet, Building, ArrowDownToLine, CheckCircle2 } from "lucide-react";
 import aiCoreImg from "@assets/generated_images/glowing_futuristic_ai_core_orb.png";
 
 export default function DashboardPage() {
   const [active, setActive] = useState(false);
   const [amount, setAmount] = useState("1000");
   const [parsedAmount, setParsedAmount] = useState(1000);
+  const [currentBalance, setCurrentBalance] = useState(1000);
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'success' | 'cancelled' | 'verifying'>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [, setLocation] = useLocation();
+  
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
+  const [withdrawSuccess, setWithdrawSuccess] = useState(false);
+  
+  const [connectStatus, setConnectStatus] = useState<{
+    hasConnectAccount: boolean;
+    onboardingComplete: boolean;
+    canWithdraw: boolean;
+  }>({ hasConnectAccount: false, onboardingComplete: false, canWithdraw: false });
+  const [isConnecting, setIsConnecting] = useState(false);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const payment = urlParams.get('payment');
     const sessionId = urlParams.get('session_id');
+    const connect = urlParams.get('connect');
+    const connectPortfolioId = urlParams.get('portfolioId');
 
     if (payment === 'success' && sessionId) {
       setPaymentStatus('verifying');
@@ -30,8 +47,50 @@ export default function DashboardPage() {
       setPaymentStatus('cancelled');
       window.history.replaceState({}, '', '/');
       setTimeout(() => setPaymentStatus('idle'), 3000);
+    } else if (connect === 'complete' && connectPortfolioId) {
+      localStorage.setItem('golddust_portfolio_id', connectPortfolioId);
+      window.history.replaceState({}, '', '/');
+      setActive(true);
+      checkConnectStatus(connectPortfolioId);
+    } else if (connect === 'refresh' && connectPortfolioId) {
+      localStorage.setItem('golddust_portfolio_id', connectPortfolioId);
+      window.history.replaceState({}, '', '/');
+      setActive(true);
+      startConnectOnboarding();
+    } else {
+      const savedPortfolioId = localStorage.getItem('golddust_portfolio_id');
+      if (savedPortfolioId) {
+        loadPortfolio(savedPortfolioId);
+      }
     }
   }, []);
+
+  const loadPortfolio = async (portfolioId: string) => {
+    try {
+      const response = await fetch(`/api/portfolio/${portfolioId}`);
+      if (response.ok) {
+        const portfolio = await response.json();
+        setParsedAmount(portfolio.initialInvestment);
+        setCurrentBalance(portfolio.currentValue);
+        setActive(true);
+        checkConnectStatus(portfolioId);
+      }
+    } catch (error) {
+      console.error('Failed to load portfolio:', error);
+    }
+  };
+
+  const checkConnectStatus = async (portfolioId: string) => {
+    try {
+      const response = await fetch(`/api/connect/status/${portfolioId}`);
+      if (response.ok) {
+        const status = await response.json();
+        setConnectStatus(status);
+      }
+    } catch (error) {
+      console.error('Failed to check connect status:', error);
+    }
+  };
 
   const verifyPayment = async (sessionId: string) => {
     try {
@@ -42,10 +101,12 @@ export default function DashboardPage() {
         localStorage.setItem('golddust_portfolio_id', data.portfolioId);
         const investmentAmount = parseFloat(data.amount) || 1000;
         setParsedAmount(investmentAmount);
+        setCurrentBalance(investmentAmount);
         setAmount(investmentAmount.toString());
         setPaymentStatus('success');
         setActive(true);
         window.history.replaceState({}, '', '/');
+        checkConnectStatus(data.portfolioId);
       } else {
         setPaymentStatus('cancelled');
         window.history.replaceState({}, '', '/');
@@ -108,9 +169,89 @@ export default function DashboardPage() {
     }
   };
 
+  const startConnectOnboarding = async () => {
+    const portfolioId = localStorage.getItem('golddust_portfolio_id');
+    if (!portfolioId) return;
+    
+    setIsConnecting(true);
+    
+    try {
+      const response = await fetch('/api/connect/onboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ portfolioId })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to start bank account setup');
+      }
+      
+      const { url } = await response.json();
+      
+      if (url) {
+        window.location.href = url;
+      } else {
+        throw new Error('No onboarding URL received');
+      }
+    } catch (error: any) {
+      console.error('Connect onboarding error:', error);
+      setIsConnecting(false);
+      setErrorMessage(error.message || 'Failed to start bank account setup');
+    }
+  };
+
+  const handleWithdraw = async () => {
+    const portfolioId = localStorage.getItem('golddust_portfolio_id');
+    if (!portfolioId) return;
+    
+    const amt = parseFloat(withdrawAmount);
+    if (isNaN(amt) || amt <= 0) {
+      setWithdrawError('Please enter a valid amount');
+      return;
+    }
+    
+    if (amt > currentBalance) {
+      setWithdrawError('Insufficient balance');
+      return;
+    }
+    
+    setIsWithdrawing(true);
+    setWithdrawError(null);
+    
+    try {
+      const response = await fetch('/api/withdraw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ portfolioId, amount: amt })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Withdrawal failed');
+      }
+      
+      const data = await response.json();
+      setCurrentBalance(data.newBalance);
+      setWithdrawSuccess(true);
+      
+      setTimeout(() => {
+        setShowWithdrawModal(false);
+        setWithdrawSuccess(false);
+        setWithdrawAmount("");
+      }, 2000);
+    } catch (error: any) {
+      console.error('Withdrawal error:', error);
+      setWithdrawError(error.message || 'Withdrawal failed. Please try again.');
+    } finally {
+      setIsWithdrawing(false);
+    }
+  };
+
   const handleReset = () => {
     setActive(false);
     setPaymentStatus('idle');
+    setConnectStatus({ hasConnectAccount: false, onboardingComplete: false, canWithdraw: false });
     localStorage.removeItem('golddust_portfolio_id');
   };
 
@@ -219,6 +360,13 @@ export default function DashboardPage() {
                         </>
                     ) : (
                         <div className="space-y-4">
+                            <div className="p-4 rounded bg-primary/10 border border-primary/20 text-center">
+                                <div className="text-xs text-muted-foreground uppercase">Current Balance</div>
+                                <div className="text-2xl font-bold text-primary font-mono" data-testid="text-current-balance">
+                                    ${currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </div>
+                            </div>
+                            
                             <div className="grid grid-cols-2 gap-2 text-center">
                                 <div className="p-3 rounded bg-primary/10 border border-primary/20">
                                     <div className="text-xs text-muted-foreground uppercase">Processing</div>
@@ -229,7 +377,62 @@ export default function DashboardPage() {
                                     <div className="text-xl font-bold text-primary font-mono">99.9%</div>
                                 </div>
                             </div>
-                             <Button 
+
+                            {!connectStatus.hasConnectAccount ? (
+                                <Button 
+                                    onClick={startConnectOnboarding}
+                                    disabled={isConnecting}
+                                    data-testid="button-setup-bank"
+                                    className="w-full h-12 bg-amber-600 hover:bg-amber-700 text-white"
+                                >
+                                    {isConnecting ? (
+                                        <>
+                                            <Loader2 className="mr-2 w-4 h-4 animate-spin" /> CONNECTING...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Building className="mr-2 w-4 h-4" /> SETUP BANK ACCOUNT
+                                        </>
+                                    )}
+                                </Button>
+                            ) : connectStatus.onboardingComplete && !connectStatus.canWithdraw ? (
+                                <div className="space-y-2">
+                                    <div className="p-3 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-mono text-center flex items-center justify-center gap-2">
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        BANK VERIFICATION IN PROGRESS...
+                                    </div>
+                                    <p className="text-xs text-center text-muted-foreground">
+                                        Your bank account is being verified. Withdrawals will be available shortly.
+                                    </p>
+                                </div>
+                            ) : !connectStatus.onboardingComplete ? (
+                                <Button 
+                                    onClick={startConnectOnboarding}
+                                    disabled={isConnecting}
+                                    data-testid="button-complete-setup"
+                                    className="w-full h-12 bg-amber-600 hover:bg-amber-700 text-white"
+                                >
+                                    {isConnecting ? (
+                                        <>
+                                            <Loader2 className="mr-2 w-4 h-4 animate-spin" /> CONNECTING...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Building className="mr-2 w-4 h-4" /> COMPLETE BANK SETUP
+                                        </>
+                                    )}
+                                </Button>
+                            ) : (
+                                <Button 
+                                    onClick={() => setShowWithdrawModal(true)}
+                                    data-testid="button-withdraw"
+                                    className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white"
+                                >
+                                    <ArrowDownToLine className="mr-2 w-4 h-4" /> WITHDRAW FUNDS
+                                </Button>
+                            )}
+
+                            <Button 
                                 onClick={handleReset}
                                 variant="outline"
                                 data-testid="button-reset-simulation"
@@ -284,6 +487,92 @@ export default function DashboardPage() {
         </div>
 
       </main>
+
+      {/* Withdraw Modal */}
+      <Dialog open={showWithdrawModal} onOpenChange={setShowWithdrawModal}>
+        <DialogContent className="bg-card border-border/50">
+          <DialogHeader>
+            <DialogTitle className="font-display flex items-center gap-2">
+              <Wallet className="w-5 h-5 text-primary" />
+              WITHDRAW FUNDS
+            </DialogTitle>
+            <DialogDescription className="font-mono text-xs">
+              Transfer funds from your trading account to your bank
+            </DialogDescription>
+          </DialogHeader>
+          
+          {withdrawSuccess ? (
+            <div className="py-8 flex flex-col items-center space-y-4">
+              <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center">
+                <CheckCircle2 className="w-8 h-8 text-primary" />
+              </div>
+              <p className="font-mono text-primary">WITHDRAWAL SUCCESSFUL</p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-4 py-4">
+                <div className="p-3 rounded bg-primary/10 border border-primary/20 text-center">
+                  <div className="text-xs text-muted-foreground uppercase">Available Balance</div>
+                  <div className="text-xl font-bold text-primary font-mono">
+                    ${currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-xs font-mono text-muted-foreground uppercase tracking-widest">
+                    Withdrawal Amount
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                    <Input 
+                      type="number" 
+                      value={withdrawAmount}
+                      onChange={(e) => setWithdrawAmount(e.target.value)}
+                      placeholder="Enter amount"
+                      disabled={isWithdrawing}
+                      data-testid="input-withdraw-amount"
+                      className="pl-8 bg-black/50 border-white/10 h-12 text-lg font-mono"
+                    />
+                  </div>
+                </div>
+                
+                {withdrawError && (
+                  <div className="p-3 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-mono text-center">
+                    {withdrawError}
+                  </div>
+                )}
+              </div>
+              
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowWithdrawModal(false)}
+                  disabled={isWithdrawing}
+                  className="border-white/10"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleWithdraw}
+                  disabled={isWithdrawing || !withdrawAmount}
+                  data-testid="button-confirm-withdraw"
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {isWithdrawing ? (
+                    <>
+                      <Loader2 className="mr-2 w-4 h-4 animate-spin" /> Processing...
+                    </>
+                  ) : (
+                    <>
+                      <ArrowDownToLine className="mr-2 w-4 h-4" /> Withdraw
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <footer className="border-t border-white/10 bg-black/40 backdrop-blur-sm py-6 mt-auto">
         <div className="container mx-auto px-4 text-center space-y-2">

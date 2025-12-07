@@ -22,6 +22,8 @@ export const portfolios = pgTable("portfolios", {
   initialInvestment: real("initial_investment").notNull(),
   currentValue: real("current_value").notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  stripeConnectAccountId: text("stripe_connect_account_id"),
+  connectOnboardingComplete: text("connect_onboarding_complete").default("false"),
 });
 
 export const insertPortfolioSchema = createInsertSchema(portfolios).omit({
@@ -66,3 +68,21 @@ export const insertMarketCacheSchema = createInsertSchema(marketCache).omit({
 
 export type InsertMarketCache = z.infer<typeof insertMarketCacheSchema>;
 export type MarketCache = typeof marketCache.$inferSelect;
+
+export const withdrawals = pgTable("withdrawals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  portfolioId: varchar("portfolio_id").notNull(),
+  amount: real("amount").notNull(),
+  status: text("status").notNull().default("pending"),
+  stripePayoutId: text("stripe_payout_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertWithdrawalSchema = createInsertSchema(withdrawals).omit({
+  id: true,
+  createdAt: true,
+  stripePayoutId: true,
+});
+
+export type InsertWithdrawal = z.infer<typeof insertWithdrawalSchema>;
+export type Withdrawal = typeof withdrawals.$inferSelect;

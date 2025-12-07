@@ -38,6 +38,59 @@ export class StripeService {
     const stripe = await getUncachableStripeClient();
     return await stripe.checkout.sessions.retrieve(sessionId);
   }
+
+  async createConnectAccount(portfolioId: string) {
+    const stripe = await getUncachableStripeClient();
+    
+    return await stripe.accounts.create({
+      type: 'express',
+      capabilities: {
+        transfers: { requested: true },
+      },
+      metadata: {
+        portfolioId,
+      },
+    });
+  }
+
+  async createConnectOnboardingLink(accountId: string, refreshUrl: string, returnUrl: string) {
+    const stripe = await getUncachableStripeClient();
+    
+    return await stripe.accountLinks.create({
+      account: accountId,
+      refresh_url: refreshUrl,
+      return_url: returnUrl,
+      type: 'account_onboarding',
+    });
+  }
+
+  async getConnectAccount(accountId: string) {
+    const stripe = await getUncachableStripeClient();
+    return await stripe.accounts.retrieve(accountId);
+  }
+
+  async createPayout(accountId: string, amount: number, portfolioId: string) {
+    const stripe = await getUncachableStripeClient();
+    
+    const transfer = await stripe.transfers.create({
+      amount: Math.round(amount * 100),
+      currency: 'usd',
+      destination: accountId,
+      metadata: {
+        portfolioId,
+        type: 'withdrawal',
+      },
+    });
+    
+    return transfer;
+  }
+
+  async getAccountBalance(accountId: string) {
+    const stripe = await getUncachableStripeClient();
+    return await stripe.balance.retrieve({
+      stripeAccount: accountId,
+    });
+  }
 }
 
 export const stripeService = new StripeService();

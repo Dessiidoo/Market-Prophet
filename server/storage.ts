@@ -7,10 +7,13 @@ import {
   type InsertTrade,
   type MarketCache,
   type InsertMarketCache,
+  type Withdrawal,
+  type InsertWithdrawal,
   users,
   portfolios,
   trades,
   marketCache,
+  withdrawals,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, desc, and, lt, gt } from "drizzle-orm";
@@ -26,6 +29,7 @@ export interface IStorage {
   createPortfolio(portfolio: InsertPortfolio): Promise<Portfolio>;
   getPortfolio(id: string): Promise<Portfolio | undefined>;
   updatePortfolioValue(id: string, currentValue: number): Promise<Portfolio | undefined>;
+  updatePortfolioConnectAccount(id: string, connectAccountId: string, onboardingComplete: boolean): Promise<Portfolio | undefined>;
   
   createTrade(trade: InsertTrade): Promise<Trade>;
   getTradesByPortfolio(portfolioId: string): Promise<Trade[]>;
@@ -34,6 +38,10 @@ export interface IStorage {
   getMarketCache(symbol: string): Promise<MarketCache | undefined>;
   setMarketCache(cache: InsertMarketCache): Promise<MarketCache>;
   cleanExpiredCache(): Promise<void>;
+  
+  createWithdrawal(withdrawal: InsertWithdrawal): Promise<Withdrawal>;
+  getWithdrawalsByPortfolio(portfolioId: string): Promise<Withdrawal[]>;
+  updateWithdrawalStatus(id: string, status: string, stripePayoutId?: string): Promise<Withdrawal | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -119,6 +127,45 @@ export class DatabaseStorage implements IStorage {
   async cleanExpiredCache(): Promise<void> {
     const now = new Date();
     await this.db.delete(marketCache).where(lt(marketCache.expiresAt, now));
+  }
+
+  async updatePortfolioConnectAccount(id: string, connectAccountId: string, onboardingComplete: boolean): Promise<Portfolio | undefined> {
+    const result = await this.db
+      .update(portfolios)
+      .set({ 
+        stripeConnectAccountId: connectAccountId, 
+        connectOnboardingComplete: onboardingComplete ? "true" : "false",
+        updatedAt: new Date() 
+      })
+      .where(eq(portfolios.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async createWithdrawal(withdrawal: InsertWithdrawal): Promise<Withdrawal> {
+    const result = await this.db.insert(withdrawals).values(withdrawal).returning();
+    return result[0];
+  }
+
+  async getWithdrawalsByPortfolio(portfolioId: string): Promise<Withdrawal[]> {
+    return await this.db
+      .select()
+      .from(withdrawals)
+      .where(eq(withdrawals.portfolioId, portfolioId))
+      .orderBy(desc(withdrawals.createdAt));
+  }
+
+  async updateWithdrawalStatus(id: string, status: string, stripePayoutId?: string): Promise<Withdrawal | undefined> {
+    const updateData: any = { status };
+    if (stripePayoutId) {
+      updateData.stripePayoutId = stripePayoutId;
+    }
+    const result = await this.db
+      .update(withdrawals)
+      .set(updateData)
+      .where(eq(withdrawals.id, id))
+      .returning();
+    return result[0];
   }
 }
 
