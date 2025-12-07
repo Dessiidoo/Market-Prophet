@@ -1,31 +1,116 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { AiTerminal } from "@/components/ui/ai-terminal";
 import { ProfitChart } from "@/components/ui/profit-chart";
 import { TradeCard } from "@/components/ui/trade-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { Activity, Play, Power, RotateCcw, Lock } from "lucide-react";
+import { Activity, Play, Power, RotateCcw, Lock, CreditCard, Loader2 } from "lucide-react";
 import aiCoreImg from "@assets/generated_images/glowing_futuristic_ai_core_orb.png";
 
 export default function DashboardPage() {
   const [active, setActive] = useState(false);
   const [amount, setAmount] = useState("1000");
   const [parsedAmount, setParsedAmount] = useState(1000);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'success' | 'cancelled' | 'verifying'>('idle');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [, setLocation] = useLocation();
 
-  const handleActivate = () => {
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const payment = urlParams.get('payment');
+    const sessionId = urlParams.get('session_id');
+
+    if (payment === 'success' && sessionId) {
+      setPaymentStatus('verifying');
+      verifyPayment(sessionId);
+    } else if (payment === 'cancelled') {
+      setPaymentStatus('cancelled');
+      window.history.replaceState({}, '', '/');
+      setTimeout(() => setPaymentStatus('idle'), 3000);
+    }
+  }, []);
+
+  const verifyPayment = async (sessionId: string) => {
+    try {
+      const response = await fetch(`/api/checkout/session/${sessionId}`);
+      const data = await response.json();
+      
+      if (data.status === 'paid' && data.portfolioId) {
+        localStorage.setItem('golddust_portfolio_id', data.portfolioId);
+        const investmentAmount = parseFloat(data.amount) || 1000;
+        setParsedAmount(investmentAmount);
+        setAmount(investmentAmount.toString());
+        setPaymentStatus('success');
+        setActive(true);
+        window.history.replaceState({}, '', '/');
+      } else {
+        setPaymentStatus('cancelled');
+        window.history.replaceState({}, '', '/');
+        setTimeout(() => setPaymentStatus('idle'), 3000);
+      }
+    } catch (error) {
+      console.error('Payment verification failed:', error);
+      setPaymentStatus('cancelled');
+      window.history.replaceState({}, '', '/');
+      setTimeout(() => setPaymentStatus('idle'), 3000);
+    }
+  };
+
+  const handleActivate = async () => {
     if (!amount) return;
     const val = parseFloat(amount);
-    if (isNaN(val)) return;
-    // Clear localStorage to force creation of a new portfolio with the new amount
-    localStorage.removeItem('golddust_portfolio_id');
-    setParsedAmount(val);
-    setActive(true);
+    if (isNaN(val) || val <= 0) return;
+    
+    setIsProcessing(true);
+    setErrorMessage(null);
+    
+    try {
+      localStorage.removeItem('golddust_portfolio_id');
+      
+      const portfolioResponse = await fetch('/api/portfolio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initialInvestment: val, currentValue: val })
+      });
+      
+      if (!portfolioResponse.ok) {
+        const errorData = await portfolioResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to create portfolio');
+      }
+      
+      const portfolio = await portfolioResponse.json();
+      
+      const checkoutResponse = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: val, portfolioId: portfolio.id })
+      });
+      
+      if (!checkoutResponse.ok) {
+        const errorData = await checkoutResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to create checkout session');
+      }
+      
+      const { url } = await checkoutResponse.json();
+      
+      if (url) {
+        window.location.href = url;
+      } else {
+        throw new Error('No checkout URL received');
+      }
+    } catch (error: any) {
+      console.error('Checkout error:', error);
+      setIsProcessing(false);
+      setErrorMessage(error.message || 'Payment initialization failed. Please try again.');
+    }
   };
 
   const handleReset = () => {
     setActive(false);
-    // Clear localStorage when resetting
+    setPaymentStatus('idle');
     localStorage.removeItem('golddust_portfolio_id');
   };
 
@@ -79,7 +164,19 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="w-full space-y-4">
-                    {!active ? (
+                    {paymentStatus === 'verifying' ? (
+                        <div className="flex flex-col items-center justify-center py-8 space-y-4">
+                            <Loader2 className="w-12 h-12 text-primary animate-spin" />
+                            <p className="font-mono text-sm text-muted-foreground">VERIFYING PAYMENT...</p>
+                        </div>
+                    ) : paymentStatus === 'cancelled' ? (
+                        <div className="flex flex-col items-center justify-center py-8 space-y-4">
+                            <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
+                                <Power className="w-6 h-6 text-red-500" />
+                            </div>
+                            <p className="font-mono text-sm text-red-400">PAYMENT CANCELLED</p>
+                        </div>
+                    ) : !active ? (
                         <>
                             <div className="space-y-2">
                                 <label className="text-xs font-mono text-muted-foreground uppercase tracking-widest">Initial Investment</label>
@@ -89,16 +186,36 @@ export default function DashboardPage() {
                                         type="number" 
                                         value={amount}
                                         onChange={(e) => setAmount(e.target.value)}
+                                        disabled={isProcessing}
+                                        data-testid="input-investment-amount"
                                         className="pl-8 bg-black/50 border-white/10 h-12 text-lg font-mono focus:border-primary/50 focus:ring-primary/20"
                                     />
                                 </div>
                             </div>
                             <Button 
                                 onClick={handleActivate}
-                                className="w-full h-14 text-lg font-display tracking-widest bg-primary hover:bg-primary/90 text-primary-foreground shadow-[0_0_20px_rgba(34,197,94,0.3)] hover:shadow-[0_0_40px_rgba(34,197,94,0.5)] transition-all"
+                                disabled={isProcessing}
+                                data-testid="button-initiate-payment"
+                                className="w-full h-14 text-lg font-display tracking-widest bg-primary hover:bg-primary/90 text-primary-foreground shadow-[0_0_20px_rgba(34,197,94,0.3)] hover:shadow-[0_0_40px_rgba(34,197,94,0.5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                <Power className="mr-2 w-5 h-5" /> INITIATE SEQUENCE
+                                {isProcessing ? (
+                                    <>
+                                        <Loader2 className="mr-2 w-5 h-5 animate-spin" /> PROCESSING...
+                                    </>
+                                ) : (
+                                    <>
+                                        <CreditCard className="mr-2 w-5 h-5" /> FUND & ACTIVATE
+                                    </>
+                                )}
                             </Button>
+                            <p className="text-xs text-center text-muted-foreground font-mono">
+                                SECURE PAYMENT VIA STRIPE
+                            </p>
+                            {errorMessage && (
+                                <div className="p-3 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-mono text-center" data-testid="text-error-message">
+                                    {errorMessage}
+                                </div>
+                            )}
                         </>
                     ) : (
                         <div className="space-y-4">
@@ -115,6 +232,7 @@ export default function DashboardPage() {
                              <Button 
                                 onClick={handleReset}
                                 variant="outline"
+                                data-testid="button-reset-simulation"
                                 className="w-full h-12 border-white/10 hover:bg-white/5 text-muted-foreground"
                             >
                                 <RotateCcw className="mr-2 w-4 h-4" /> RESET SIMULATION
