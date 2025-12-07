@@ -10,6 +10,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Activity, Play, Power, RotateCcw, Lock, CreditCard, Loader2, Wallet, Building, ArrowDownToLine, CheckCircle2 } from "lucide-react";
 import aiCoreImg from "@assets/generated_images/glowing_futuristic_ai_core_orb.png";
 
+interface BacktestMetrics {
+  totalReturn: number;
+  winRate: number;
+  peakReturn: number;
+  sharpeRatio: number;
+  totalTrades: number;
+  outperformsSP500: boolean;
+  sp500Comparison: number;
+  isLoading: boolean;
+  error: string | null;
+}
+
 export default function DashboardPage() {
   const [active, setActive] = useState(false);
   const [amount, setAmount] = useState("1000");
@@ -32,6 +44,18 @@ export default function DashboardPage() {
     canWithdraw: boolean;
   }>({ hasConnectAccount: false, onboardingComplete: false, canWithdraw: false });
   const [isConnecting, setIsConnecting] = useState(false);
+  
+  const [backtestMetrics, setBacktestMetrics] = useState<BacktestMetrics>({
+    totalReturn: 0,
+    winRate: 0,
+    peakReturn: 0,
+    sharpeRatio: 0,
+    totalTrades: 0,
+    outperformsSP500: false,
+    sp500Comparison: 0,
+    isLoading: true,
+    error: null,
+  });
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -63,6 +87,43 @@ export default function DashboardPage() {
         loadPortfolio(savedPortfolioId);
       }
     }
+  }, []);
+
+  useEffect(() => {
+    const fetchBacktestMetrics = async () => {
+      try {
+        const response = await fetch('/api/backtest?days=14');
+        if (response.ok) {
+          const data = await response.json();
+          setBacktestMetrics({
+            totalReturn: data.totalReturn || 0,
+            winRate: data.winRate || 0,
+            peakReturn: data.peakReturn || 0,
+            sharpeRatio: data.sharpeRatio || 0,
+            totalTrades: data.totalTrades || 0,
+            outperformsSP500: data.outperformsSP500 || false,
+            sp500Comparison: data.sp500Comparison || 0,
+            isLoading: false,
+            error: null,
+          });
+        } else {
+          setBacktestMetrics(prev => ({
+            ...prev,
+            isLoading: false,
+            error: 'Failed to load performance data',
+          }));
+        }
+      } catch (error) {
+        console.error('Failed to fetch backtest metrics:', error);
+        setBacktestMetrics(prev => ({
+          ...prev,
+          isLoading: false,
+          error: 'Failed to load performance data',
+        }));
+      }
+    };
+
+    fetchBacktestMetrics();
   }, []);
 
   const loadPortfolio = async (portfolioId: string) => {
@@ -325,20 +386,33 @@ export default function DashboardPage() {
                         <>
                             <div className="p-3 rounded bg-gradient-to-r from-primary/10 to-amber-500/10 border border-primary/30 mb-2">
                                 <div className="text-[10px] text-center text-muted-foreground uppercase mb-2">AI Performance (Last 14 Days)</div>
-                                <div className="grid grid-cols-3 gap-2 text-center">
-                                    <div>
-                                        <div className="text-lg font-bold text-primary font-mono">+12.47%</div>
-                                        <div className="text-[9px] text-muted-foreground">Return</div>
+                                {backtestMetrics.isLoading ? (
+                                    <div className="flex items-center justify-center py-2">
+                                        <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                                        <span className="ml-2 text-xs text-muted-foreground">Loading metrics...</span>
                                     </div>
-                                    <div>
-                                        <div className="text-lg font-bold text-amber-400 font-mono">78.3%</div>
-                                        <div className="text-[9px] text-muted-foreground">Win Rate</div>
+                                ) : (
+                                    <div className="grid grid-cols-3 gap-2 text-center">
+                                        <div>
+                                            <div className="text-lg font-bold text-primary font-mono" data-testid="text-preview-return">
+                                                {backtestMetrics.totalReturn >= 0 ? '+' : ''}{backtestMetrics.totalReturn.toFixed(2)}%
+                                            </div>
+                                            <div className="text-[9px] text-muted-foreground">Return</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-lg font-bold text-amber-400 font-mono" data-testid="text-preview-winrate">
+                                                {backtestMetrics.winRate.toFixed(1)}%
+                                            </div>
+                                            <div className="text-[9px] text-muted-foreground">Win Rate</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-lg font-bold text-blue-400 font-mono" data-testid="text-preview-peak">
+                                                {backtestMetrics.peakReturn >= 0 ? '+' : ''}{backtestMetrics.peakReturn.toFixed(1)}%
+                                            </div>
+                                            <div className="text-[9px] text-muted-foreground">Peak</div>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <div className="text-lg font-bold text-blue-400 font-mono">+52.8%</div>
-                                        <div className="text-[9px] text-muted-foreground">Peak</div>
-                                    </div>
-                                </div>
+                                )}
                             </div>
                             
                             <div className="space-y-2">
@@ -389,39 +463,61 @@ export default function DashboardPage() {
                                 </div>
                             </div>
                             
-                            <div className="grid grid-cols-2 gap-2 text-center">
-                                <div className="p-3 rounded bg-primary/10 border border-primary/20">
-                                    <div className="text-xs text-muted-foreground uppercase">14-Day Return</div>
-                                    <div className="text-xl font-bold text-primary font-mono" data-testid="text-14day-return">+12.47%</div>
+                            {backtestMetrics.isLoading ? (
+                                <div className="flex items-center justify-center py-4">
+                                    <Loader2 className="w-6 h-6 text-primary animate-spin" />
+                                    <span className="ml-2 text-sm text-muted-foreground">Loading performance data...</span>
                                 </div>
-                                <div className="p-3 rounded bg-primary/10 border border-primary/20">
-                                    <div className="text-xs text-muted-foreground uppercase">Win Rate</div>
-                                    <div className="text-xl font-bold text-primary font-mono" data-testid="text-win-rate">78.3%</div>
-                                </div>
-                            </div>
-                            
-                            <div className="grid grid-cols-3 gap-2 text-center">
-                                <div className="p-2 rounded bg-amber-500/10 border border-amber-500/20">
-                                    <div className="text-[10px] text-muted-foreground uppercase">Peak Return</div>
-                                    <div className="text-lg font-bold text-amber-400 font-mono" data-testid="text-peak-return">+52.8%</div>
-                                </div>
-                                <div className="p-2 rounded bg-blue-500/10 border border-blue-500/20">
-                                    <div className="text-[10px] text-muted-foreground uppercase">Sharpe Ratio</div>
-                                    <div className="text-lg font-bold text-blue-400 font-mono" data-testid="text-sharpe">2.41</div>
-                                </div>
-                                <div className="p-2 rounded bg-purple-500/10 border border-purple-500/20">
-                                    <div className="text-[10px] text-muted-foreground uppercase">Signals/Day</div>
-                                    <div className="text-lg font-bold text-purple-400 font-mono" data-testid="text-signals">847</div>
-                                </div>
-                            </div>
-                            
-                            <div className="p-2 rounded bg-gradient-to-r from-primary/5 to-amber-500/5 border border-primary/20 text-center">
-                                <div className="text-[10px] text-muted-foreground">BENCHMARK STATUS</div>
-                                <div className="text-xs font-mono text-primary flex items-center justify-center gap-1">
-                                    <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-                                    OUTPERFORMING S&P 500 BY +8.2%
-                                </div>
-                            </div>
+                            ) : (
+                                <>
+                                    <div className="grid grid-cols-2 gap-2 text-center">
+                                        <div className="p-3 rounded bg-primary/10 border border-primary/20">
+                                            <div className="text-xs text-muted-foreground uppercase">14-Day Return</div>
+                                            <div className="text-xl font-bold text-primary font-mono" data-testid="text-14day-return">
+                                                {backtestMetrics.totalReturn >= 0 ? '+' : ''}{backtestMetrics.totalReturn.toFixed(2)}%
+                                            </div>
+                                        </div>
+                                        <div className="p-3 rounded bg-primary/10 border border-primary/20">
+                                            <div className="text-xs text-muted-foreground uppercase">Win Rate</div>
+                                            <div className="text-xl font-bold text-primary font-mono" data-testid="text-win-rate">
+                                                {backtestMetrics.winRate.toFixed(1)}%
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-3 gap-2 text-center">
+                                        <div className="p-2 rounded bg-amber-500/10 border border-amber-500/20">
+                                            <div className="text-[10px] text-muted-foreground uppercase">Peak Return</div>
+                                            <div className="text-lg font-bold text-amber-400 font-mono" data-testid="text-peak-return">
+                                                {backtestMetrics.peakReturn >= 0 ? '+' : ''}{backtestMetrics.peakReturn.toFixed(1)}%
+                                            </div>
+                                        </div>
+                                        <div className="p-2 rounded bg-blue-500/10 border border-blue-500/20">
+                                            <div className="text-[10px] text-muted-foreground uppercase">Sharpe Ratio</div>
+                                            <div className="text-lg font-bold text-blue-400 font-mono" data-testid="text-sharpe">
+                                                {backtestMetrics.sharpeRatio.toFixed(2)}
+                                            </div>
+                                        </div>
+                                        <div className="p-2 rounded bg-purple-500/10 border border-purple-500/20">
+                                            <div className="text-[10px] text-muted-foreground uppercase">Total Trades</div>
+                                            <div className="text-lg font-bold text-purple-400 font-mono" data-testid="text-trades">
+                                                {backtestMetrics.totalTrades}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="p-2 rounded bg-gradient-to-r from-primary/5 to-amber-500/5 border border-primary/20 text-center">
+                                        <div className="text-[10px] text-muted-foreground">BENCHMARK STATUS</div>
+                                        <div className={`text-xs font-mono flex items-center justify-center gap-1 ${backtestMetrics.outperformsSP500 ? 'text-primary' : 'text-red-400'}`}>
+                                            <span className={`w-2 h-2 rounded-full animate-pulse ${backtestMetrics.outperformsSP500 ? 'bg-primary' : 'bg-red-400'}`}></span>
+                                            {backtestMetrics.outperformsSP500 
+                                                ? `OUTPERFORMING S&P 500 BY +${backtestMetrics.sp500Comparison.toFixed(1)}%`
+                                                : `UNDERPERFORMING S&P 500 BY ${backtestMetrics.sp500Comparison.toFixed(1)}%`
+                                            }
+                                        </div>
+                                    </div>
+                                </>
+                            )}
 
                             {!connectStatus.hasConnectAccount ? (
                                 <Button 
