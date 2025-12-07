@@ -102,5 +102,26 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/initialize", async (req, res) => {
+    try {
+      const { portfolioId } = req.body;
+      
+      if (!portfolioId) {
+        return res.status(400).json({ error: "portfolioId is required" });
+      }
+      
+      const symbols = ["NVDA", "TSLA", "AAPL", "AMD"];
+      const signals = await marketService.getTradeSignals(symbols, portfolioId);
+      
+      res.json({ 
+        success: true, 
+        signalsGenerated: signals.length,
+        signals 
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }

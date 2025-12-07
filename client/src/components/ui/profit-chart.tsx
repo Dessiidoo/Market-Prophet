@@ -2,32 +2,87 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 
-const INITIAL_DATA = Array.from({ length: 20 }, (_, i) => ({
-  time: i,
-  value: 1000 + Math.random() * 50,
-}));
+interface Portfolio {
+  id: string;
+  userId: string;
+  initialInvestment: number;
+  currentValue: number;
+  createdAt: string;
+}
 
 export function ProfitChart({ active, initialAmount }: { active: boolean; initialAmount: number }) {
-  const [data, setData] = useState(INITIAL_DATA);
+  const [data, setData] = useState<Array<{ time: number; value: number }>>([]);
   const [currentValue, setCurrentValue] = useState(initialAmount);
+  const [portfolioId, setPortfolioId] = useState<string | null>(null);
 
   useEffect(() => {
-    setData(Array.from({ length: 20 }, (_, i) => ({
-      time: i,
-      value: initialAmount + (Math.random() * (initialAmount * 0.05)),
-    })));
-    setCurrentValue(initialAmount);
+    const initializePortfolio = async () => {
+      const storedPortfolioId = localStorage.getItem('golddust_portfolio_id');
+      
+      if (storedPortfolioId) {
+        try {
+          const response = await fetch(`/api/portfolio/${storedPortfolioId}`);
+          if (response.ok) {
+            const portfolio: Portfolio = await response.json();
+            setPortfolioId(portfolio.id);
+            setCurrentValue(portfolio.currentValue);
+            setData(Array.from({ length: 20 }, (_, i) => ({
+              time: i,
+              value: portfolio.initialInvestment + (i / 20) * (portfolio.currentValue - portfolio.initialInvestment),
+            })));
+            return;
+          }
+        } catch (error) {
+          console.error('Failed to fetch portfolio:', error);
+        }
+      }
+      
+      try {
+        const response = await fetch('/api/portfolio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: 'demo-user',
+            initialInvestment: initialAmount,
+          }),
+        });
+        
+        if (response.ok) {
+          const portfolio: Portfolio = await response.json();
+          setPortfolioId(portfolio.id);
+          localStorage.setItem('golddust_portfolio_id', portfolio.id);
+          setCurrentValue(initialAmount);
+          setData(Array.from({ length: 20 }, (_, i) => ({
+            time: i,
+            value: initialAmount + (Math.random() * (initialAmount * 0.05)),
+          })));
+          
+          fetch('/api/initialize', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ portfolioId: portfolio.id }),
+          }).catch(err => console.error('Failed to initialize trade signals:', err));
+        }
+      } catch (error) {
+        console.error('Failed to create portfolio:', error);
+        setData(Array.from({ length: 20 }, (_, i) => ({
+          time: i,
+          value: initialAmount + (Math.random() * (initialAmount * 0.05)),
+        })));
+        setCurrentValue(initialAmount);
+      }
+    };
+
+    initializePortfolio();
   }, [initialAmount]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active || !portfolioId) return;
 
     const interval = setInterval(() => {
       setData((prev) => {
         const lastValue = prev[prev.length - 1].value;
         
-        // Aggressive growth algorithm for "Wow Factor"
-        // Base growth between 2% and 5% per tick
         const growthRate = 0.02 + (Math.random() * 0.03); 
         const volatility = lastValue * 0.01; 
         
@@ -36,12 +91,19 @@ export function ProfitChart({ active, initialAmount }: { active: boolean; initia
         
         const newData = [...prev.slice(1), { time: prev[prev.length - 1].time + 1, value: newValue }];
         setCurrentValue(newValue);
+        
+        fetch(`/api/portfolio/${portfolioId}/value`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ currentValue: newValue }),
+        }).catch(err => console.error('Failed to update portfolio value:', err));
+        
         return newData;
       });
     }, 500);
 
     return () => clearInterval(interval);
-  }, [active]);
+  }, [active, portfolioId]);
 
   const percentageGain = initialAmount > 0 ? ((currentValue - initialAmount) / initialAmount) * 100 : 0;
 
@@ -52,16 +114,20 @@ export function ProfitChart({ active, initialAmount }: { active: boolean; initia
            <div className="text-muted-foreground text-sm font-mono tracking-widest uppercase">Projected Portfolio Value</div>
            <motion.div 
              className="text-4xl md:text-5xl font-display font-bold text-foreground"
-             key={Math.floor(currentValue)} // Animate on integer change
+             key={Math.floor(currentValue)}
              initial={{ scale: 1.1, color: "hsl(var(--primary))" }}
              animate={{ scale: 1, color: "hsl(var(--foreground))" }}
              transition={{ duration: 0.2 }}
+             data-testid="text-portfolio-value"
            >
              ${currentValue.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}
            </motion.div>
         </div>
         <div className="text-right">
-          <div className={`text-2xl font-bold font-mono ${percentageGain >= 0 ? 'text-primary' : 'text-destructive'}`}>
+          <div 
+            className={`text-2xl font-bold font-mono ${percentageGain >= 0 ? 'text-primary' : 'text-destructive'}`}
+            data-testid="text-portfolio-gain"
+          >
             {percentageGain >= 0 ? '+' : ''}{percentageGain.toFixed(2)}%
           </div>
           <div className="text-xs text-muted-foreground uppercase tracking-wider">Total Return</div>

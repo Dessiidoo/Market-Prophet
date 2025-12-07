@@ -9,50 +9,82 @@ interface LogEntry {
   type: "info" | "success" | "warning" | "error";
 }
 
-const MOCK_LOGS = [
-  "Initializing neural pathways...",
-  "Connecting to global market exchanges...",
+const ANALYSIS_MESSAGES = [
   "Analyzing 40,000 assets...",
-  "Sentiment analysis: TWITTER [POSITIVE]",
-  "Sentiment analysis: REDDIT [NEUTRAL]",
-  "Sentiment analysis: BLOOMBERG [NEGATIVE]",
   "Cross-referencing historical volatility...",
-  "Detecting arbitrage opportunity on EXCHANGE_04...",
   "Optimizing entry points...",
-  "Risk assessment: 0.001% downside probability...",
-  "Allocating capital to high-frequency nodes...",
-  "Pattern recognition: BULL_FLAG detected on AAPL...",
-  "Pattern recognition: HEAD_SHOULDERS on BTC...",
-  "Executing trade sequence ALPHA-9...",
-  "Profit target locked.",
   "Re-calibrating predictive models...",
-  "Ingesting SEC filings...",
-  "Parsing Federal Reserve minutes...",
   "Monitoring whale wallet movements...",
   "Encryption layer secure.",
 ];
 
 export function AiTerminal({ active }: { active: boolean }) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [lastTradeCheck, setLastTradeCheck] = useState<string>('');
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const addLog = (message: string, type: "info" | "success" | "warning" | "error" = "info") => {
+    const newLog: LogEntry = {
+      id: Math.random().toString(36).substring(7),
+      timestamp: new Date().toLocaleTimeString([], { hour12: false, fractionalSecondDigits: 3 }),
+      message,
+      type,
+    };
+    setLogs((prev) => [...prev.slice(-20), newLog]);
+  };
 
   useEffect(() => {
     if (!active) return;
 
-    const interval = setInterval(() => {
-      const randomLog = MOCK_LOGS[Math.floor(Math.random() * MOCK_LOGS.length)];
-      const newLog: LogEntry = {
-        id: Math.random().toString(36).substring(7),
-        timestamp: new Date().toLocaleTimeString([], { hour12: false, fractionalSecondDigits: 3 }),
-        message: randomLog,
-        type: randomLog.includes("profit") || randomLog.includes("Optimizing") ? "success" : "info",
-      };
+    addLog("Initializing neural pathways...", "info");
+    addLog("Connecting to global market exchanges...", "info");
 
-      setLogs((prev) => [...prev.slice(-20), newLog]);
-    }, 800);
+    const analysisInterval = setInterval(() => {
+      const randomMsg = ANALYSIS_MESSAGES[Math.floor(Math.random() * ANALYSIS_MESSAGES.length)];
+      addLog(randomMsg, "info");
+    }, 3000);
 
-    return () => clearInterval(interval);
-  }, [active]);
+    const tradeCheckInterval = setInterval(async () => {
+      try {
+        const response = await fetch('/api/trades/recent?limit=1');
+        if (response.ok) {
+          const trades = await response.json();
+          if (trades.length > 0 && trades[0].id !== lastTradeCheck) {
+            setLastTradeCheck(trades[0].id);
+            addLog(`>>> Market signal detected: ${trades[0].symbol} ${trades[0].action}`, "success");
+            addLog(`Confidence: ${trades[0].confidence}% | Entry: $${trades[0].entryPrice.toFixed(2)}`, "success");
+            addLog(`Reason: ${trades[0].reason}`, "info");
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch trades for terminal:', error);
+      }
+    }, 5000);
+
+    const portfolioInterval = setInterval(async () => {
+      const portfolioId = localStorage.getItem('golddust_portfolio_id');
+      if (portfolioId) {
+        try {
+          const response = await fetch(`/api/portfolio/${portfolioId}`);
+          if (response.ok) {
+            const portfolio = await response.json();
+            const gain = ((portfolio.currentValue - portfolio.initialInvestment) / portfolio.initialInvestment) * 100;
+            if (Math.random() > 0.7) {
+              addLog(`Portfolio update: $${portfolio.currentValue.toFixed(2)} (+${gain.toFixed(2)}%)`, "success");
+            }
+          }
+        } catch (error) {
+          console.error('Failed to fetch portfolio for terminal:', error);
+        }
+      }
+    }, 10000);
+
+    return () => {
+      clearInterval(analysisInterval);
+      clearInterval(tradeCheckInterval);
+      clearInterval(portfolioInterval);
+    };
+  }, [active, lastTradeCheck]);
 
   useEffect(() => {
     if (scrollRef.current) {
