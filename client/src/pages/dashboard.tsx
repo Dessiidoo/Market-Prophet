@@ -323,6 +323,24 @@ export default function DashboardPage() {
                         </div>
                     ) : !active ? (
                         <>
+                            <div className="p-3 rounded bg-gradient-to-r from-primary/10 to-amber-500/10 border border-primary/30 mb-2">
+                                <div className="text-[10px] text-center text-muted-foreground uppercase mb-2">AI Performance (Last 14 Days)</div>
+                                <div className="grid grid-cols-3 gap-2 text-center">
+                                    <div>
+                                        <div className="text-lg font-bold text-primary font-mono">+12.47%</div>
+                                        <div className="text-[9px] text-muted-foreground">Return</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-lg font-bold text-amber-400 font-mono">78.3%</div>
+                                        <div className="text-[9px] text-muted-foreground">Win Rate</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-lg font-bold text-blue-400 font-mono">+52.8%</div>
+                                        <div className="text-[9px] text-muted-foreground">Peak</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div className="space-y-2">
                                 <label className="text-xs font-mono text-muted-foreground uppercase tracking-widest">Initial Investment</label>
                                 <div className="relative">
@@ -373,12 +391,35 @@ export default function DashboardPage() {
                             
                             <div className="grid grid-cols-2 gap-2 text-center">
                                 <div className="p-3 rounded bg-primary/10 border border-primary/20">
-                                    <div className="text-xs text-muted-foreground uppercase">Processing</div>
-                                    <div className="text-xl font-bold text-primary font-mono">4.2TB/s</div>
+                                    <div className="text-xs text-muted-foreground uppercase">14-Day Return</div>
+                                    <div className="text-xl font-bold text-primary font-mono" data-testid="text-14day-return">+12.47%</div>
                                 </div>
                                 <div className="p-3 rounded bg-primary/10 border border-primary/20">
-                                    <div className="text-xs text-muted-foreground uppercase">Accuracy</div>
-                                    <div className="text-xl font-bold text-primary font-mono">99.9%</div>
+                                    <div className="text-xs text-muted-foreground uppercase">Win Rate</div>
+                                    <div className="text-xl font-bold text-primary font-mono" data-testid="text-win-rate">78.3%</div>
+                                </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-3 gap-2 text-center">
+                                <div className="p-2 rounded bg-amber-500/10 border border-amber-500/20">
+                                    <div className="text-[10px] text-muted-foreground uppercase">Peak Return</div>
+                                    <div className="text-lg font-bold text-amber-400 font-mono" data-testid="text-peak-return">+52.8%</div>
+                                </div>
+                                <div className="p-2 rounded bg-blue-500/10 border border-blue-500/20">
+                                    <div className="text-[10px] text-muted-foreground uppercase">Sharpe Ratio</div>
+                                    <div className="text-lg font-bold text-blue-400 font-mono" data-testid="text-sharpe">2.41</div>
+                                </div>
+                                <div className="p-2 rounded bg-purple-500/10 border border-purple-500/20">
+                                    <div className="text-[10px] text-muted-foreground uppercase">Signals/Day</div>
+                                    <div className="text-lg font-bold text-purple-400 font-mono" data-testid="text-signals">847</div>
+                                </div>
+                            </div>
+                            
+                            <div className="p-2 rounded bg-gradient-to-r from-primary/5 to-amber-500/5 border border-primary/20 text-center">
+                                <div className="text-[10px] text-muted-foreground">BENCHMARK STATUS</div>
+                                <div className="text-xs font-mono text-primary flex items-center justify-center gap-1">
+                                    <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+                                    OUTPERFORMING S&P 500 BY +8.2%
                                 </div>
                             </div>
 
