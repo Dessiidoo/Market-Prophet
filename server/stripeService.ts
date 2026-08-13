@@ -10,7 +10,6 @@ export class StripeService {
     const stripe = await getUncachableStripeClient();
     
     return await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
       line_items: [
         {
           price_data: {
