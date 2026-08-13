@@ -10,6 +10,7 @@ export class StripeService {
     const stripe = await getUncachableStripeClient();
     
     return await stripe.checkout.sessions.create({
+      managed_payments: { enabled: false },
       line_items: [
         {
           price_data: {
