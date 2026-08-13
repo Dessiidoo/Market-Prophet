@@ -54,298 +54,181 @@ class BacktestService {
   private apiKey: string;
   private baseUrl = "https://www.alphavantage.co/query";
   private resultCache: Map<string, { data: AggregateBacktestResult; timestamp: number }> = new Map();
-  private cacheExpiry = 30 * 60 * 1000; // 30 minutes cache
+  private cacheExpiry = 30 * 60 * 1000;
 
   constructor() {
     this.apiKey = process.env.ALPHA_VANTAGE_API_KEY || "";
   }
 
   private getCacheKey(symbols: string[], days: number): string {
-    return `${symbols.sort().join(',')}_${days}`;
+    return `${[...symbols].sort().join(',')}_${days}`;
   }
 
   private getCachedResult(symbols: string[], days: number): AggregateBacktestResult | null {
-    const key = this.getCacheKey(symbols, days);
-    const cached = this.resultCache.get(key);
-    if (cached && Date.now() - cached.timestamp < this.cacheExpiry) {
-      console.log(`Returning cached backtest results for ${key}`);
-      return cached.data;
-    }
+    const cached = this.resultCache.get(this.getCacheKey(symbols, days));
+    if (cached && Date.now() - cached.timestamp < this.cacheExpiry) return cached.data;
     return null;
   }
 
   private setCachedResult(symbols: string[], days: number, data: AggregateBacktestResult): void {
-    const key = this.getCacheKey(symbols, days);
-    this.resultCache.set(key, { data, timestamp: Date.now() });
-    console.log(`Cached backtest results for ${key}`);
+    this.resultCache.set(this.getCacheKey(symbols, days), { data, timestamp: Date.now() });
   }
 
   private async fetchHistoricalData(symbol: string): Promise<HistoricalData[]> {
-    const url = `${this.baseUrl}?function=TIME_SERIES_DAILY&symbol=${symbol}&outputsize=compact&apikey=${this.apiKey}`;
-    
+    if (!this.apiKey) throw new Error("ALPHA_VANTAGE_API_KEY is not configured");
+    const url = `${this.baseUrl}?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(symbol)}&outputsize=compact&apikey=${this.apiKey}`;
     const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch historical data for ${symbol}`);
-    }
-
+    if (!response.ok) throw new Error(`Failed to fetch historical data for ${symbol}`);
     const data = await response.json();
-    
-    if (data["Note"]) {
-      throw new Error("Alpha Vantage API rate limit reached. Please try again later.");
-    }
+    if (data["Note"]) throw new Error("Alpha Vantage API rate limit reached. Please try again later.");
+    if (data["Error Message"]) throw new Error(`Alpha Vantage error for ${symbol}: ${data["Error Message"]}`);
+    if (!data["Time Series (Daily)"]) throw new Error(`No historical data found for ${symbol}`);
 
-    if (!data["Time Series (Daily)"]) {
-      throw new Error(`No historical data found for ${symbol}`);
-    }
-
-    const timeSeries = data["Time Series (Daily)"];
-    const historicalData: HistoricalData[] = [];
-
-    for (const date of Object.keys(timeSeries).slice(0, 90)) {
-      const dayData = timeSeries[date];
-      historicalData.push({
+    return Object.keys(data["Time Series (Daily)"]).slice(0, 90).map(date => {
+      const d = data["Time Series (Daily)"][date];
+      return {
         date,
-        open: parseFloat(dayData["1. open"]),
-        high: parseFloat(dayData["2. high"]),
-        low: parseFloat(dayData["3. low"]),
-        close: parseFloat(dayData["4. close"]),
-        volume: parseInt(dayData["5. volume"]),
-      });
-    }
-
-    return historicalData.reverse();
+        open: Number(d["1. open"]),
+        high: Number(d["2. high"]),
+        low: Number(d["3. low"]),
+        close: Number(d["4. close"]),
+        volume: Number(d["5. volume"]),
+      };
+    }).reverse();
   }
 
-  private async fetchRSIData(symbol: string): Promise<Map<string, number>> {
-    const url = `${this.baseUrl}?function=RSI&symbol=${symbol}&interval=daily&time_period=14&series_type=close&apikey=${this.apiKey}`;
-    
-    await new Promise(resolve => setTimeout(resolve, 12000));
-    
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch RSI data for ${symbol}`);
+  private calculateRSI(closes: number[], period = 14): number[] {
+    const rsi = new Array<number>(closes.length).fill(50);
+    if (closes.length <= period) return rsi;
+    let gains = 0;
+    let losses = 0;
+    for (let i = 1; i <= period; i++) {
+      const change = closes[i] - closes[i - 1];
+      gains += Math.max(change, 0);
+      losses += Math.max(-change, 0);
     }
-
-    const data = await response.json();
-    
-    if (data["Note"]) {
-      throw new Error("Alpha Vantage API rate limit reached");
+    let avgGain = gains / period;
+    let avgLoss = losses / period;
+    rsi[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+    for (let i = period + 1; i < closes.length; i++) {
+      const change = closes[i] - closes[i - 1];
+      avgGain = (avgGain * (period - 1) + Math.max(change, 0)) / period;
+      avgLoss = (avgLoss * (period - 1) + Math.max(-change, 0)) / period;
+      rsi[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
     }
-
-    const rsiMap = new Map<string, number>();
-    
-    if (data["Technical Analysis: RSI"]) {
-      const rsiData = data["Technical Analysis: RSI"];
-      for (const date of Object.keys(rsiData)) {
-        rsiMap.set(date, parseFloat(rsiData[date]["RSI"]));
-      }
-    }
-
-    return rsiMap;
+    return rsi;
   }
 
-  private generateSignal(
-    currentPrice: number,
-    prevPrice: number,
-    rsi: number,
-    symbol: string
-  ): { action: "BUY" | "SELL"; confidence: number; reason: string } | null {
-    const changePercent = ((currentPrice - prevPrice) / prevPrice) * 100;
+  private sma(values: number[], period: number, end: number): number {
+    const start = Math.max(0, end - period + 1);
+    const slice = values.slice(start, end + 1);
+    return slice.reduce((a, b) => a + b, 0) / slice.length;
+  }
 
-    if (rsi < 30 && changePercent > 0) {
-      return {
-        action: "BUY",
-        confidence: Math.min(95, 70 + (30 - rsi)),
-        reason: `Oversold (RSI: ${rsi.toFixed(1)}) with positive momentum (+${changePercent.toFixed(2)}%)`,
-      };
-    }
+  private generateSignal(data: HistoricalData[], i: number): { action: "BUY" | "SELL"; confidence: number; reason: string } | null {
+    if (i < 20) return null;
+    const closes = data.map(d => d.close);
+    const volumes = data.map(d => d.volume);
+    const rsi = this.calculateRSI(closes)[i];
+    const current = closes[i];
+    const prev = closes[i - 1];
+    const change5 = ((current - closes[i - 5]) / closes[i - 5]) * 100;
+    const change1 = ((current - prev) / prev) * 100;
+    const sma20 = this.sma(closes, 20, i);
+    const sma50 = this.sma(closes, 50, i);
+    const avgVolume = this.sma(volumes, 20, i);
+    const volumeRatio = avgVolume > 0 ? volumes[i] / avgVolume : 1;
 
-    if (rsi > 70 && changePercent < 0) {
-      return {
-        action: "SELL",
-        confidence: Math.min(95, 70 + (rsi - 70)),
-        reason: `Overbought (RSI: ${rsi.toFixed(1)}) with negative momentum (${changePercent.toFixed(2)}%)`,
-      };
-    }
+    let buy = 0;
+    let sell = 0;
+    const reasons: string[] = [];
+    if (rsi < 35) { buy++; reasons.push(`RSI ${rsi.toFixed(1)} oversold`); }
+    if (rsi > 65) { sell++; reasons.push(`RSI ${rsi.toFixed(1)} overbought`); }
+    if (current > sma20) { buy++; reasons.push("price above 20-day trend"); }
+    else { sell++; reasons.push("price below 20-day trend"); }
+    if (sma20 > sma50) buy++; else sell++;
+    if (change5 > 1) { buy++; reasons.push(`5-day momentum +${change5.toFixed(2)}%`); }
+    if (change5 < -1) { sell++; reasons.push(`5-day momentum ${change5.toFixed(2)}%`); }
+    if (volumeRatio > 1.2) { if (change1 > 0) buy++; else if (change1 < 0) sell++; }
 
-    if (changePercent > 3) {
-      return {
-        action: "BUY",
-        confidence: Math.min(92, 75 + changePercent),
-        reason: `Strong upward momentum (+${changePercent.toFixed(2)}%), RSI: ${rsi.toFixed(1)}`,
-      };
-    }
-
-    if (changePercent < -3) {
-      return {
-        action: "SELL",
-        confidence: Math.min(88, 70 + Math.abs(changePercent)),
-        reason: `Strong downward trend (${changePercent.toFixed(2)}%), protecting capital`,
-      };
-    }
-
-    return null;
+    const score = Math.max(buy, sell);
+    if (score < 3 || buy === sell) return null;
+    const action = buy > sell ? "BUY" : "SELL";
+    const confidence = Math.min(95, 55 + score * 8 + Math.abs(buy - sell) * 5);
+    return { action, confidence, reason: `${action === "BUY" ? "Multi-factor bullish" : "Multi-factor bearish"} setup: ${reasons.join(", ")}` };
   }
 
   async runBacktest(symbol: string, days: number = 30): Promise<BacktestResult> {
     const historicalData = await this.fetchHistoricalData(symbol);
-    const rsiData = await this.fetchRSIData(symbol);
-    
     const dataToTest = historicalData.slice(-days);
     const trades: BacktestTrade[] = [];
     let portfolioValue = 10000;
-    let peakValue = 10000;
+    let peakValue = portfolioValue;
     let maxDrawdown = 0;
     const dailyReturns: number[] = [];
 
-    for (let i = 1; i < dataToTest.length; i++) {
+    for (let i = 20; i < dataToTest.length - 1; i++) {
+      const signal = this.generateSignal(dataToTest, i);
+      if (!signal) continue;
       const currentDay = dataToTest[i];
-      const prevDay = dataToTest[i - 1];
-      const rsi = rsiData.get(currentDay.date) || 50;
-
-      const signal = this.generateSignal(
-        currentDay.close,
-        prevDay.close,
-        rsi,
-        symbol
-      );
-
-      if (signal) {
-        const nextDayIndex = i + 1;
-        let outcome: "WIN" | "LOSS" | undefined;
-        let returnPercent: number | undefined;
-
-        if (nextDayIndex < dataToTest.length) {
-          const nextDay = dataToTest[nextDayIndex];
-          const priceChange = ((nextDay.close - currentDay.close) / currentDay.close) * 100;
-
-          if (signal.action === "BUY") {
-            returnPercent = priceChange;
-            outcome = priceChange > 0 ? "WIN" : "LOSS";
-          } else {
-            returnPercent = -priceChange;
-            outcome = priceChange < 0 ? "WIN" : "LOSS";
-          }
-
-          portfolioValue *= (1 + (returnPercent || 0) / 100);
-          dailyReturns.push(returnPercent || 0);
-
-          if (portfolioValue > peakValue) {
-            peakValue = portfolioValue;
-          }
-          const drawdown = ((peakValue - portfolioValue) / peakValue) * 100;
-          if (drawdown > maxDrawdown) {
-            maxDrawdown = drawdown;
-          }
-        }
-
-        trades.push({
-          date: currentDay.date,
-          symbol,
-          action: signal.action,
-          price: currentDay.close,
-          confidence: signal.confidence,
-          reason: signal.reason,
-          outcome,
-          returnPercent,
-        });
-      }
+      const nextDay = dataToTest[i + 1];
+      const priceChange = ((nextDay.close - currentDay.close) / currentDay.close) * 100;
+      const returnPercent = signal.action === "BUY" ? priceChange : -priceChange;
+      const outcome = returnPercent > 0 ? "WIN" : "LOSS";
+      portfolioValue *= 1 + returnPercent / 100;
+      dailyReturns.push(returnPercent);
+      peakValue = Math.max(peakValue, portfolioValue);
+      maxDrawdown = Math.max(maxDrawdown, ((peakValue - portfolioValue) / peakValue) * 100);
+      trades.push({ date: currentDay.date, symbol, action: signal.action, price: currentDay.close, confidence: signal.confidence, reason: signal.reason, outcome, returnPercent });
     }
 
     const winningTrades = trades.filter(t => t.outcome === "WIN").length;
     const losingTrades = trades.filter(t => t.outcome === "LOSS").length;
     const totalTrades = winningTrades + losingTrades;
-
-    const avgReturn = dailyReturns.length > 0 
-      ? dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length 
-      : 0;
-    
-    const stdDev = dailyReturns.length > 0
-      ? Math.sqrt(dailyReturns.map(r => Math.pow(r - avgReturn, 2)).reduce((a, b) => a + b, 0) / dailyReturns.length)
-      : 1;
-    
-    const sharpeRatio = stdDev > 0 ? (avgReturn / stdDev) * Math.sqrt(252) : 0;
-    
-    const peakReturn = dailyReturns.length > 0 ? Math.max(...dailyReturns) : 0;
-
+    const averageReturn = dailyReturns.length ? dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length : 0;
+    const stdDev = dailyReturns.length ? Math.sqrt(dailyReturns.reduce((sum, r) => sum + Math.pow(r - averageReturn, 2), 0) / dailyReturns.length) : 0;
     return {
       symbol,
       period: `${days} days`,
       totalTrades,
       winningTrades,
       losingTrades,
-      winRate: totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0,
+      winRate: totalTrades ? (winningTrades / totalTrades) * 100 : 0,
       totalReturn: ((portfolioValue - 10000) / 10000) * 100,
-      averageReturn: avgReturn,
-      peakReturn,
+      averageReturn,
+      peakReturn: dailyReturns.length ? Math.max(...dailyReturns) : 0,
       maxDrawdown,
-      sharpeRatio,
+      sharpeRatio: stdDev > 0 ? (averageReturn / stdDev) * Math.sqrt(252) : 0,
       trades,
     };
   }
 
   async runAggregateBacktest(symbols: string[], days: number = 14): Promise<AggregateBacktestResult> {
     const cached = this.getCachedResult(symbols, days);
-    if (cached) {
-      return cached;
-    }
-
+    if (cached) return cached;
     const results: BacktestResult[] = [];
-
     for (const symbol of symbols) {
-      try {
-        const result = await this.runBacktest(symbol, days);
-        results.push(result);
-        await new Promise(resolve => setTimeout(resolve, 12000));
-      } catch (error) {
-        console.error(`Backtest failed for ${symbol}:`, error);
-      }
+      try { results.push(await this.runBacktest(symbol, days)); }
+      catch (error) { console.error(`Backtest failed for ${symbol}:`, error); }
     }
-
-    const totalTrades = results.reduce((sum, r) => sum + r.totalTrades, 0);
-    const winningTrades = results.reduce((sum, r) => sum + r.winningTrades, 0);
-    const losingTrades = results.reduce((sum, r) => sum + r.losingTrades, 0);
-    
-    const avgTotalReturn = results.length > 0
-      ? results.reduce((sum, r) => sum + r.totalReturn, 0) / results.length
-      : 0;
-    
-    const avgWinRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
-    const avgReturnPerTrade = totalTrades > 0
-      ? results.reduce((sum, r) => sum + r.averageReturn * r.totalTrades, 0) / totalTrades
-      : 0;
-    
-    const peakReturn = results.length > 0 ? Math.max(...results.map(r => r.peakReturn)) : 0;
-    const maxDrawdown = results.length > 0 ? Math.max(...results.map(r => r.maxDrawdown)) : 0;
-    const avgSharpe = results.length > 0
-      ? results.reduce((sum, r) => sum + r.sharpeRatio, 0) / results.length
-      : 0;
-
-    const sp500AvgReturn = 0.04 * (days / 365) * 100;
-    const outperformsSP500 = avgTotalReturn > sp500AvgReturn;
-    const sp500Comparison = avgTotalReturn - sp500AvgReturn;
-
+    const totalTrades = results.reduce((s, r) => s + r.totalTrades, 0);
+    const winningTrades = results.reduce((s, r) => s + r.winningTrades, 0);
+    const losingTrades = results.reduce((s, r) => s + r.losingTrades, 0);
+    const totalReturn = results.length ? results.reduce((s, r) => s + r.totalReturn, 0) / results.length : 0;
+    const sp500Comparison = totalReturn;
     const result: AggregateBacktestResult = {
-      period: `${days} days`,
-      symbols,
-      totalTrades,
-      winningTrades,
-      losingTrades,
-      winRate: avgWinRate,
-      totalReturn: avgTotalReturn,
-      averageReturnPerTrade: avgReturnPerTrade,
-      peakReturn,
-      maxDrawdown,
-      sharpeRatio: avgSharpe,
-      outperformsSP500,
+      period: `${days} days`, symbols, totalTrades, winningTrades, losingTrades,
+      winRate: totalTrades ? (winningTrades / totalTrades) * 100 : 0,
+      totalReturn,
+      averageReturnPerTrade: totalTrades ? results.reduce((s, r) => s + r.averageReturn * r.totalTrades, 0) / totalTrades : 0,
+      peakReturn: results.length ? Math.max(...results.map(r => r.peakReturn)) : 0,
+      maxDrawdown: results.length ? Math.max(...results.map(r => r.maxDrawdown)) : 0,
+      sharpeRatio: results.length ? results.reduce((s, r) => s + r.sharpeRatio, 0) / results.length : 0,
+      outperformsSP500: totalReturn > 0,
       sp500Comparison,
       results,
     };
-
-    if (results.length > 0) {
-      this.setCachedResult(symbols, days, result);
-    }
-
+    if (results.length) this.setCachedResult(symbols, days, result);
     return result;
   }
 }
