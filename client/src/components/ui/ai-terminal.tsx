@@ -9,23 +9,18 @@ interface LogEntry {
   type: "info" | "success" | "warning" | "error";
 }
 
-const ANALYSIS_MESSAGES = [
-  "Analyzing 40,000 assets...",
-  "Cross-referencing historical volatility...",
-  "Optimizing entry points...",
-  "Re-calibrating predictive models...",
-  "Monitoring whale wallet movements...",
-  "Encryption layer secure.",
-];
-
 export function AiTerminal({ active }: { active: boolean }) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [lastTradeCheck, setLastTradeCheck] = useState<string>('');
+  const [lastTradeCheck, setLastTradeCheck] = useState<string>("");
+  const [lastPortfolioValue, setLastPortfolioValue] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const logIdCounter = useRef(0);
 
-  const addLog = (message: string, type: "info" | "success" | "warning" | "error" = "info") => {
+  // Stable, non-random IDs — order of real events, not Math.random()
+  const addLog = (message: string, type: LogEntry["type"] = "info") => {
+    logIdCounter.current += 1;
     const newLog: LogEntry = {
-      id: Math.random().toString(36).substring(7),
+      id: `log-${logIdCounter.current}`,
       timestamp: new Date().toLocaleTimeString([], { hour12: false, fractionalSecondDigits: 3 }),
       message,
       type,
@@ -36,55 +31,65 @@ export function AiTerminal({ active }: { active: boolean }) {
   useEffect(() => {
     if (!active) return;
 
-    addLog("Initializing neural pathways...", "info");
-    addLog("Connecting to global market exchanges...", "info");
+    // One-time real status messages on activation — not fabricated, just state transitions
+    addLog("System activated.", "info");
 
-    const analysisInterval = setInterval(() => {
-      const randomMsg = ANALYSIS_MESSAGES[Math.floor(Math.random() * ANALYSIS_MESSAGES.length)];
-      addLog(randomMsg, "info");
-    }, 3000);
+    let cancelled = false;
 
+    // Poll for real trade signals — this was already legitimate, kept as-is
     const tradeCheckInterval = setInterval(async () => {
       try {
-        const response = await fetch('/api/trades/recent?limit=1');
-        if (response.ok) {
-          const trades = await response.json();
-          if (trades.length > 0 && trades[0].id !== lastTradeCheck) {
-            setLastTradeCheck(trades[0].id);
-            addLog(`>>> Market signal detected: ${trades[0].symbol} ${trades[0].action}`, "success");
-            addLog(`Confidence: ${trades[0].confidence}% | Entry: $${trades[0].entryPrice.toFixed(2)}`, "success");
-            addLog(`Reason: ${trades[0].reason}`, "info");
-          }
+        const response = await fetch("/api/trades/recent?limit=1");
+        if (!response.ok) return;
+        const trades = await response.json();
+        if (cancelled) return;
+        if (trades.length > 0 && trades[0].id !== lastTradeCheck) {
+          setLastTradeCheck(trades[0].id);
+          addLog(`>>> Signal: ${trades[0].symbol} ${trades[0].action}`, "success");
+          addLog(
+            `Confidence: ${trades[0].confidence}% | Entry: $${trades[0].entryPrice?.toFixed(2)}`,
+            "success"
+          );
+          if (trades[0].reason) addLog(`Reason: ${trades[0].reason}`, "info");
         }
       } catch (error) {
-        console.error('Failed to fetch trades for terminal:', error);
+        console.error("Failed to fetch trades for terminal:", error);
+        addLog("Trade feed unreachable — retrying...", "warning");
       }
     }, 5000);
 
+    // Report real portfolio changes — every time value actually changes, not on a coin flip
     const portfolioInterval = setInterval(async () => {
-      const portfolioId = localStorage.getItem('golddust_portfolio_id');
-      if (portfolioId) {
-        try {
-          const response = await fetch(`/api/portfolio/${portfolioId}`);
-          if (response.ok) {
-            const portfolio = await response.json();
-            const gain = ((portfolio.currentValue - portfolio.initialInvestment) / portfolio.initialInvestment) * 100;
-            if (Math.random() > 0.7) {
-              addLog(`Portfolio update: $${portfolio.currentValue.toFixed(2)} (+${gain.toFixed(2)}%)`, "success");
-            }
-          }
-        } catch (error) {
-          console.error('Failed to fetch portfolio for terminal:', error);
+      const portfolioId = localStorage.getItem("golddust_portfolio_id");
+      if (!portfolioId) return;
+      try {
+        const response = await fetch(`/api/portfolio/${portfolioId}`);
+        if (!response.ok) return;
+        const portfolio = await response.json();
+        if (cancelled) return;
+
+        if (lastPortfolioValue !== null && portfolio.currentValue !== lastPortfolioValue) {
+          const gain =
+            ((portfolio.currentValue - portfolio.initialInvestment) / portfolio.initialInvestment) * 100;
+          const direction = portfolio.currentValue >= lastPortfolioValue ? "success" : "warning";
+          addLog(
+            `Portfolio update: $${portfolio.currentValue.toFixed(2)} (${gain >= 0 ? "+" : ""}${gain.toFixed(2)}%)`,
+            direction
+          );
         }
+        setLastPortfolioValue(portfolio.currentValue);
+      } catch (error) {
+        console.error("Failed to fetch portfolio for terminal:", error);
       }
     }, 10000);
 
     return () => {
-      clearInterval(analysisInterval);
+      cancelled = true;
       clearInterval(tradeCheckInterval);
       clearInterval(portfolioInterval);
     };
-  }, [active, lastTradeCheck]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -100,12 +105,12 @@ export function AiTerminal({ active }: { active: boolean }) {
           <span className="font-bold tracking-widest">GOLD_DUST_KERNEL_V4.2</span>
         </div>
         <div className="flex gap-2">
-           <Wifi className={`w-3 h-3 ${active ? "text-primary animate-pulse" : "text-muted-foreground"}`} />
-           <Cpu className={`w-3 h-3 ${active ? "text-primary animate-pulse" : "text-muted-foreground"}`} />
-           <ShieldCheck className="w-3 h-3 text-primary" />
+          <Wifi className={`w-3 h-3 ${active ? "text-primary animate-pulse" : "text-muted-foreground"}`} />
+          <Cpu className={`w-3 h-3 ${active ? "text-primary animate-pulse" : "text-muted-foreground"}`} />
+          <ShieldCheck className="w-3 h-3 text-primary" />
         </div>
       </div>
-      
+
       <div ref={scrollRef} className="flex-1 p-4 overflow-y-auto space-y-1 relative">
         <AnimatePresence initial={false}>
           {logs.map((log) => (
@@ -126,8 +131,7 @@ export function AiTerminal({ active }: { active: boolean }) {
             <div className="text-muted-foreground/30 italic">System Ready. Awaiting Activation...</div>
           )}
         </AnimatePresence>
-        
-        {/* Scan line effect */}
+
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(transparent_50%,rgba(0,0,0,0.5)_50%)] bg-[length:100%_4px] opacity-20"></div>
       </div>
     </div>
