@@ -2,6 +2,39 @@
 
 > AI-native market intelligence and portfolio analytics platform. **Engineering truth standard: the application must never present simulated, random, fabricated, or unverified market behavior as real.**
 
+## Loretta's GoldDust Vision
+
+GoldDust is being built **for Loretta first**. The commercial product can eventually serve other people, but the original purpose is to become Loretta's personal market-intelligence partner and financial decision-support system.
+
+Loretta does not want another generic trading dashboard that merely displays charts. She wants a system that actively watches the markets, finds meaningful opportunities, analyzes them, and brings the important information to her attention without requiring her to manually hunt through dozens of markets and screens.
+
+The personal north star is:
+
+- **Continuously watch relevant markets** using real, timestamped market data.
+- **Search broadly for opportunities** rather than assuming one asset or one market is always the answer.
+- **Analyze opportunities quantitatively** using reproducible indicators, price action, volatility, momentum, volume, trend, risk, and other validated factors as appropriate.
+- **Identify potential entry and exit points** and clearly distinguish an opportunity from a guarantee.
+- **Give Loretta a simple actionable signal:** BUY, SELL, HOLD, WATCH, or NO ACTION when the evidence does not justify a trade.
+- **Explain why.** Every important signal should show the data, factors, assumptions, timestamp, and model/version behind it.
+- **Watch positions after entry.** GoldDust should monitor the original thesis and alert Loretta when conditions materially change.
+- **Track outcomes.** The system should record what it predicted, what happened afterward, and where its analysis was right or wrong.
+- **Learn from evidence.** Historical performance and prediction outcomes should be used to evaluate and improve models, never to manufacture impressive-looking returns.
+- **Protect capital.** Risk, drawdown, position sizing, concentration, liquidity, and uncertainty should be first-class information.
+- **Save Loretta time.** The system should surface what matters instead of burying her in financial noise.
+- **Remain honest.** If the system does not know, does not have current data, or has insufficient evidence, it must say so.
+
+### What GoldDust is NOT supposed to do
+
+GoldDust is **not** supposed to pretend that it can predict the future with certainty. It must never manufacture confidence, invent market activity, claim to monitor data sources it does not actually access, or turn a simulated return into a claim of real profit.
+
+The objective is not to make the dashboard *look* intelligent. The objective is to make the underlying system genuinely useful to Loretta.
+
+### Personal-first, product-ready
+
+The architecture should be strong enough that GoldDust can eventually become a product for other traders, fintech companies, or financial platforms. But product expansion must not erase the original north star: **build the system that Loretta herself would trust enough to use every day.**
+
+---
+
 ## Mission
 
 GoldDust is being developed as a production-grade financial intelligence platform. The goal is a professional market-data terminal that can ingest real market data, calculate reproducible indicators, generate transparent signals, maintain auditable portfolio state, and support rigorous historical testing.
